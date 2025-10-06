@@ -1,0 +1,242 @@
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <iostream>
+#include <string>
+#include <thread>
+#include <limits>
+
+using namespace std;
+
+string simbolo = "_";
+const int tamTablero = 3;
+
+void showMenu() {
+    cout << "\n---------------------------------" << endl;
+    cout << "1. Cambiar apodo" << endl;
+    cout << "2. Enviar mensaje privado" << endl;
+    cout << "3. Enviar mensaje a todos" << endl;
+    cout << "4. Ver lista de participantes" << endl;
+    cout << "5. Unirse a una partida" << endl;
+    cout << "6. Realizar jugada" << endl;
+    cout << "7. Desconectar" << endl;
+    cout << "---------------------------------" << endl;
+    cout << "Elige una opción: ";
+}
+
+void recibirMensajes(int socketCliente) {
+    char buffer[1024];
+
+    while (true) {
+        memset(buffer, 0, sizeof(buffer));
+        int n = read(socketCliente, buffer, 1);
+        cout << "\n"; cout << string(buffer, n); cout.flush();
+
+        if (n <= 0) {
+            cout << "\nDesconectado del servidor." << endl;
+            close(socketCliente);
+            exit(0);
+        }
+        char tipo = buffer[0];
+
+        if (tipo == 'M') {
+            n = read(socketCliente, buffer, 2);
+            cout << string(buffer, n); cout.flush();
+            int tamNick = stoi(string(buffer, 2));
+            
+            n = read(socketCliente, buffer, tamNick);
+            cout << string(buffer, n); cout.flush();
+            string nick(buffer, tamNick);
+
+            n = read(socketCliente, buffer, 3);
+            cout << string(buffer, n); cout.flush();
+            int tamMsg = stoi(string(buffer, 3));
+            
+            n = read(socketCliente, buffer, tamMsg);
+            cout << string(buffer, n) << endl;
+            string msg(buffer, tamMsg);
+            
+            cout << "\n[" << nick << " dice]: " << msg << endl;
+        } else if (tipo == 'T') {
+            n = read(socketCliente, buffer, 2);
+            cout << string(buffer, n); cout.flush();
+            int tamNick = stoi(string(buffer, 2));
+            
+            n = read(socketCliente, buffer, tamNick);
+            cout << string(buffer, n); cout.flush();
+            string nick(buffer, tamNick);
+
+            n = read(socketCliente, buffer, 3);
+            cout << string(buffer, n); cout.flush();
+            int tamMsg = stoi(string(buffer, 3));
+            
+            n = read(socketCliente, buffer, tamMsg);
+            cout << string(buffer, n) << endl;
+            string msg(buffer, tamMsg);
+
+            cout << "\n[MENSAJE PRIVADO de " << nick << "]: " << msg << endl;
+        } else if (tipo == 'L') {
+            n = read(socketCliente, buffer, 2);
+            cout << string(buffer, n); cout.flush();
+            int cantClientes = stoi(string(buffer, 2));
+            
+            cout << "\n--- Participantes Conectados (" << cantClientes << ") ---" << endl;
+            for (int i = 0; i < cantClientes; ++i) {
+                n = read(socketCliente, buffer, 2);
+                cout << string(buffer, n); cout.flush();
+                int tamNick = stoi(string(buffer, 2));
+                
+                n = read(socketCliente, buffer, tamNick);
+                cout << string(buffer, n);
+                string nick(buffer, tamNick);
+                cout << "\n- " << nick << endl;
+            }
+            cout << "-------------------------------------" << endl;
+        } else if (tipo == 'V') {
+            n = read(socketCliente, buffer, 1);
+            cout << string(buffer, n) << endl;
+            simbolo = string(buffer, 1);
+            cout << "\n¡Es tu turno! Juegas con '" << simbolo << "'" << endl;
+        } else if (tipo == 'v') {
+            char tablero_buffer[tamTablero * tamTablero + 1];
+            n = read(socketCliente, tablero_buffer, tamTablero * tamTablero);
+            cout << string(tablero_buffer, n) << endl;
+            tablero_buffer[n] = '\0';
+            cout << "\n--- Tablero Actual ---" << endl;
+            for (int i = 0; i < tamTablero * tamTablero; i++) {
+                cout << " " << tablero_buffer[i] << " ";
+                if ((i + 1) % tamTablero == 0) {
+                    cout << endl;
+                    if (i < tamTablero * tamTablero -1){
+                        for(int k=0; k<tamTablero; ++k) cout << "---";
+                        cout << endl;
+                    }
+                } else {
+                    cout << "|";
+                }
+            }
+            cout << "----------------------" << endl;
+        }
+        else if (tipo == 'O')
+        {
+            simbolo = "_";
+            n = read(socketCliente, buffer, 3);
+            cout << string(buffer, n) << endl;
+            string result = string(buffer, 3);
+            if(result=="win"){
+                 cout << "\n¡FELICIDADES! ¡HAS GANADO LA PARTIDA!" << endl;
+            }
+            else if (result == "los") {
+            cout << "\nHas perdido la partida. ¡Mejor suerte la próxima!" << endl;
+            }
+            else if (result == "emp") {
+            cout << "\nLa partida ha terminado en EMPATE." << endl;
+            }
+        }
+    }
+}
+
+int main(int argc, char* argv[]) {
+    if (argc < 3) {
+        cerr << "Uso: " << argv[0] << " <ip-servidor> <puerto>\n";
+        return 1;
+    }
+
+    string ip = argv[1];
+    int puerto = atoi(argv[2]);
+
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    sockaddr_in stSockAddr{};
+    stSockAddr.sin_family = AF_INET;
+    stSockAddr.sin_port = htons(puerto);
+    stSockAddr.sin_addr.s_addr = inet_addr(ip.c_str());
+
+    if (connect(sock, (sockaddr*)&stSockAddr, sizeof(stSockAddr)) == -1) {
+        cerr << "Error conectando al servidor\n";
+        return 1;
+    }
+
+    cout << "¡Conectado al servidor!" << endl;
+
+    thread t(recibirMensajes, sock);
+    t.detach();
+
+    int entrada;
+    while (true) {
+        showMenu();
+        cin >> entrada;
+
+        if (cin.fail()) {
+            cout << "Entrada inválida. Por favor, introduce un número." << endl;
+            cin.clear();
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+            continue;
+        }
+
+        string cont, tamaño, enviar, destin, tamañoDestin;
+        char tipo;
+
+        if (entrada == 1) {
+            tipo = 'n';
+            cout << "Introduce tu nuevo apodo: ";
+            cin >> cont;
+            int tamNick = cont.size();
+            tamaño = (tamNick < 10) ? "0" + to_string(tamNick) : to_string(tamNick);
+            enviar = string(1, tipo) + tamaño + cont;
+        } else if (entrada == 2) {
+            tipo = 't';
+            cout << "Destinatario: ";
+            cin >> destin;
+            cout << "Mensaje: ";
+            cin.ignore();
+            getline(cin, cont);
+            int tamDest = destin.size();
+            int tamMsg = cont.size();
+            tamañoDestin = (tamDest < 10) ? "0" + to_string(tamDest) : to_string(tamDest);
+            tamaño = (tamMsg < 10) ? "00" + to_string(tamMsg) : (tamMsg < 100) ? "0" + to_string(tamMsg) : to_string(tamMsg);
+            enviar = string(1, tipo) + tamañoDestin + destin + tamaño + cont;
+        } else if (entrada == 3) {
+            tipo = 'm';
+            cout << "Mensaje para todos: ";
+            cin.ignore();
+            getline(cin, cont);
+            int tamMsg = cont.size();
+            tamaño = (tamMsg < 10) ? "00" + to_string(tamMsg) : (tamMsg < 100) ? "0" + to_string(tamMsg) : to_string(tamMsg);
+            enviar = string(1, tipo) + tamaño + cont;
+        } else if (entrada == 4) {
+            tipo = 'l';
+            enviar = string(1, tipo);
+        } else if (entrada == 5) {
+            tipo = 'p';
+            enviar = string(1, tipo);
+        } else if (entrada == 6) {
+            if (simbolo == "_") {
+                cout << "No es tu turno o no estás en una partida." << endl;
+                continue;
+            }
+            cout << "Introduce tu jugada (posición 1-" << tamTablero * tamTablero << "): ";
+            int pos;
+            cin >> pos;
+            enviar = string(1, 'w') + simbolo + to_string(pos);
+        } else if (entrada == 7) {
+            tipo = 'x';
+            enviar = string(1, tipo);
+            cout << enviar << endl;
+            write(sock, enviar.c_str(), enviar.size());
+            break;
+        } else {
+            cout << "Opción no válida." << endl;
+            continue;
+        }
+        cout << enviar << endl;
+        write(sock, enviar.c_str(), enviar.size());
+    }
+
+    close(sock);
+    return 0;
+}
