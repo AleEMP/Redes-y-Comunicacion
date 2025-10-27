@@ -53,7 +53,6 @@ void reiniciarJuego() {
     }
     movimientos = 0;
     clientesJugando.clear();
-    cout << "\nJuego reiniciado. Esperando nuevos jugadores." << endl;
 }
 
 bool revisarVictoria(const string& simbolo_jugador) {
@@ -116,10 +115,7 @@ int main(int argc, char* argv[]) {
     struct sockaddr_in servaddr, cliaddr;
     int servidor_sock;
     
-    if ((servidor_sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-        perror("Fallo al crear socket");
-        exit(EXIT_FAILURE);
-    }
+    servidor_sock = socket(AF_INET, SOCK_DGRAM, 0);
     
     memset(&servaddr, 0, sizeof(servaddr));
     memset(&cliaddr, 0, sizeof(cliaddr));
@@ -128,17 +124,10 @@ int main(int argc, char* argv[]) {
     servaddr.sin_port = htons(puerto);
     servaddr.sin_addr.s_addr = INADDR_ANY;
     
-    if (bind(servidor_sock, (const struct sockaddr *)&servaddr, sizeof(servaddr)) < 0) {
-        perror("error bind failed");
-        close(servidor_sock);
-        exit(EXIT_FAILURE);
-    }
-
-    cout << "Servidor UDP escuchando en puerto " << puerto << "...\n";
+    bind(servidor_sock, (const struct sockaddr *)&servaddr, sizeof(servaddr));
 
     char buffer[MAXLINE];
     socklen_t len_cliaddr = sizeof(cliaddr);
-
 
     while (true) {
         memset(buffer, 0, MAXLINE);
@@ -148,30 +137,28 @@ int main(int argc, char* argv[]) {
             cerr << "Error en recvfrom" << endl;
             continue;
         }
-        
         string datagram(buffer, n);
         string client_addr_str = addr_to_string(cliaddr);
         string nickCliente;
 
         if (clients_by_addr_str.count(client_addr_str)) {
             nickCliente = clients_by_addr_str[client_addr_str].nickname;
-        } else {
+        } 
+        
+        else {
             nickCliente = "temp_" + client_addr_str;
             ClientInfo newClient;
             newClient.nickname = nickCliente;
             newClient.addr = cliaddr;
             clients_by_addr_str[client_addr_str] = newClient;
             clients_by_nick[nickCliente] = newClient;
-            cout << "Nuevo cliente conectado: " << client_addr_str << " (asignado " << nickCliente << ")" << endl;
         }
         
-    
-        cout << "\n[SERVER RECV]: " << datagram.substr(0, 70) 
-             << (datagram.size() > 70 ? "..." : "") 
-             << " (from " << nickCliente << ", size=" << n << ")" << endl;
+        
+        cout << "\n[SERVER RECV]: " << datagram.substr(0, 40) << " (size=" << n << ")" << endl;
 
         if (isdigit(datagram[0])) {
-            char tipo_paquete = datagram[5]; // Debería ser 'f'
+            char tipo_paquete = datagram[5];
 
             if (tipo_paquete != 'f') {
                 cerr << "Error: Paquete con seq pero no es tipo 'f'" << endl;
@@ -182,21 +169,19 @@ int main(int argc, char* argv[]) {
             int tamDest = stoi(datagram.substr(offset, 2));
             offset += 2;
             string dest = datagram.substr(offset, tamDest);
-
+            offset += tamDest;
             if (clients_by_nick.count(dest)) {
                 struct sockaddr_in dest_addr = clients_by_nick[dest].addr;
-                
-              
-                cout << "[SERVER SEND]: Reenviando paquete (seq " << datagram.substr(0,2) << ") a " << dest << " (size=" << n << ")" << endl;
-           
+                string tamañoSource = (nickCliente.size() < 10) ? "0" + to_string(nickCliente.size()) : to_string(nickCliente.size());
 
-             
-                sendto(servidor_sock, datagram.c_str(), datagram.size(), 0, 
+                string enviar= datagram.substr(0,5) + "F" + tamañoSource + nickCliente + datagram.substr(offset,MAXLINE-offset);
+                cout << "[SERVER SEND]: (seq " << enviar.substr(0,70) << ") a " << dest << " (size=" << n << ")" << endl;
+                
+                sendto(servidor_sock, enviar.c_str(), enviar.size(), 0, 
                        (struct sockaddr*)&dest_addr, sizeof(dest_addr));
             } else {
                  cout << "Error: Destinatario de archivo '" << dest << "' no encontrado." << endl;
             }
-            
             continue; 
         }
 
@@ -210,7 +195,6 @@ int main(int argc, char* argv[]) {
             clients_by_nick.erase(oldNick);
             clients_by_addr_str[client_addr_str].nickname = newNick;
             clients_by_nick[newNick] = clients_by_addr_str[client_addr_str];
-            cout << "\n" << oldNick << " ahora es " << newNick << endl;
 
         } else if (tipo == 'm') {
            
@@ -220,10 +204,12 @@ int main(int argc, char* argv[]) {
             string tamañoSource = (tamNick < 10) ? "0" + to_string(tamNick) : to_string(tamNick);
             string tamañoMsg = (tamMsg < 10) ? "00" + to_string(tamMsg) : (tamMsg < 100) ? "0" + to_string(tamMsg) : to_string(tamMsg);
             string enviar = 'M' + tamañoSource + nickCliente + tamañoMsg + msg;
+            
+            enviar.append(MAXLINE - enviar.size(), '#');
 
             for (const auto& pair : clients_by_addr_str) {
                 if (pair.first != client_addr_str) {
-                    cout << "[SERVER SEND]: " << enviar << " (to " << pair.second.nickname << ")" << endl;
+                    cout << "[SERVER SEND]: " << enviar.substr(0, 40) << "... (to " << pair.second.nickname << ")" << endl;
                     sendto(servidor_sock, enviar.c_str(), enviar.size(), 0,
                            (struct sockaddr*)&pair.second.addr, sizeof(pair.second.addr));
                 }
@@ -238,9 +224,11 @@ int main(int argc, char* argv[]) {
             string tamañoMsg = (tamMsg < 10) ? "00" + to_string(tamMsg) : (tamMsg < 100) ? "0" + to_string(tamMsg) : to_string(tamMsg);
             string enviar = 'T' + tamañoSource + nickCliente + tamañoMsg + msg;
             
+            enviar.append(MAXLINE - enviar.size(), '#');
+            
             if (clients_by_nick.count(destination)) {
                 struct sockaddr_in dest_addr = clients_by_nick[destination].addr;
-                cout << "[SERVER SEND]: " << enviar << " (to " << destination << ")" << endl;
+                cout << "[SERVER SEND]: " << enviar.substr(0, 40) << "... (to " << destination << ")" << endl;
                 sendto(servidor_sock, enviar.c_str(), enviar.size(), 0,
                        (struct sockaddr*)&dest_addr, sizeof(dest_addr));
             }
@@ -253,7 +241,9 @@ int main(int argc, char* argv[]) {
             string cantClientes = (clients_by_nick.size() < 10) ? "0" + to_string(clients_by_nick.size()) : to_string(clients_by_nick.size());
             string enviar = "L" + cantClientes + lista_clientes_str;
             
-            cout << "[SERVER SEND]: " << enviar << " (to " << nickCliente << ")" << endl;
+            enviar.append(MAXLINE - enviar.size(), '#');
+            
+            cout << "[SERVER SEND]: " << enviar.substr(0, 40) << "... (to " << nickCliente << ")" << endl;
             sendto(servidor_sock, enviar.c_str(), enviar.size(), 0, (struct sockaddr*)&cliaddr, len_cliaddr);
 
         } else if (tipo == 'p') {
@@ -266,9 +256,12 @@ int main(int argc, char* argv[]) {
                 cout << "\n" << nickCliente << " se unió a la partida." << endl;
                 if (clientesJugando.size() == 2) {
                     cout << "La partida comienza." << endl;
+                    
                     string enviar = "Vo";
+                    enviar.append(MAXLINE - enviar.size(), '#');
+                    
                     struct sockaddr_in player1_addr = clients_by_addr_str[clientesJugando[0]].addr;
-                    cout << "[SERVER SEND]: " << enviar << " (to " << clients_by_addr_str[clientesJugando[0]].nickname << ")" << endl;
+                    cout << "[SERVER SEND]: " << enviar.substr(0, 40) << "... (to " << clients_by_addr_str[clientesJugando[0]].nickname << ")" << endl;
                     sendto(servidor_sock, enviar.c_str(), enviar.size(), 0,
                            (struct sockaddr*)&player1_addr, sizeof(player1_addr));
                 }
@@ -281,14 +274,17 @@ int main(int argc, char* argv[]) {
             if (pos >= 1 && pos <= tamTablero * tamTablero && tablero[pos-1] == "_") {
                 tablero[pos - 1] = simbolo_jugador;
                 movimientos++;
+
                 string enviar_tablero = "v";
                 for(int i = 0; i < tamTablero*tamTablero; ++i) enviar_tablero += tablero[i];
+                enviar_tablero.append(MAXLINE - enviar_tablero.size(), '#');
+
                 struct sockaddr_in p1_addr = clients_by_addr_str[clientesJugando[0]].addr;
                 struct sockaddr_in p2_addr = clients_by_addr_str[clientesJugando[1]].addr;
 
-                cout << "[SERVER SEND]: " << enviar_tablero << " (to player 1)" << endl;
+                cout << "[SERVER SEND]: " << enviar_tablero.substr(0, 40) << "... (to player 1)" << endl;
                 sendto(servidor_sock, enviar_tablero.c_str(), enviar_tablero.size(), 0, (struct sockaddr*)&p1_addr, sizeof(p1_addr));
-                cout << "[SERVER SEND]: " << enviar_tablero << " (to player 2)" << endl;
+                cout << "[SERVER SEND]: " << enviar_tablero.substr(0, 40) << "... (to player 2)" << endl;
                 sendto(servidor_sock, enviar_tablero.c_str(), enviar_tablero.size(), 0, (struct sockaddr*)&p2_addr, sizeof(p2_addr));
                 
                 if (revisarVictoria(simbolo_jugador)) {
@@ -296,23 +292,38 @@ int main(int argc, char* argv[]) {
                     string perdedor_addr_str = (simbolo_jugador == "o") ? clientesJugando[1] : clientesJugando[0];
                     struct sockaddr_in ganador_addr = clients_by_addr_str[ganador_addr_str].addr;
                     struct sockaddr_in perdedor_addr = clients_by_addr_str[perdedor_addr_str].addr;
-                    cout << "[SERVER SEND]: Owin (to winner)" << endl;
-                    sendto(servidor_sock, "Owin", 4, 0, (struct sockaddr*)&ganador_addr, sizeof(ganador_addr)); 
-                    cout << "[SERVER SEND]: Olos (to loser)" << endl;
-                    sendto(servidor_sock, "Olos", 4, 0, (struct sockaddr*)&perdedor_addr, sizeof(perdedor_addr)); 
+                    
+                    string msg_win = "Owin";
+                    msg_win.append(MAXLINE - msg_win.size(), '#');
+                    string msg_los = "Olos";
+                    msg_los.append(MAXLINE - msg_los.size(), '#');
+                    
+                    cout << "[SERVER SEND]: Owin... (to winner)" << endl;
+                    sendto(servidor_sock, msg_win.c_str(), msg_win.size(), 0, (struct sockaddr*)&ganador_addr, sizeof(ganador_addr)); 
+                    cout << "[SERVER SEND]: Olos... (to loser)" << endl;
+                    sendto(servidor_sock, msg_los.c_str(), msg_los.size(), 0, (struct sockaddr*)&perdedor_addr, sizeof(perdedor_addr)); 
                     reiniciarJuego();
                 } else if (revisarEmpate()) {
-                    cout << "[SERVER SEND]: Oemp (to players)" << endl;
-                    sendto(servidor_sock, "Oemp", 4, 0, (struct sockaddr*)&p1_addr, sizeof(p1_addr)); 
-                    sendto(servidor_sock, "Oemp", 4, 0, (struct sockaddr*)&p2_addr, sizeof(p2_addr));
+                    
+                    string msg_emp = "Oemp";
+                    msg_emp.append(MAXLINE - msg_emp.size(), '#');
+
+                    cout << "[SERVER SEND]: Oemp... (to players)" << endl;
+                    sendto(servidor_sock, msg_emp.c_str(), msg_emp.size(), 0, (struct sockaddr*)&p1_addr, sizeof(p1_addr)); 
+                    sendto(servidor_sock, msg_emp.c_str(), msg_emp.size(), 0, (struct sockaddr*)&p2_addr, sizeof(p2_addr));
                     reiniciarJuego();
                 } else {
+                    
                     if (simbolo_jugador == "o") {
-                        cout << "[SERVER SEND]: Vx (to player 2)" << endl;
-                        sendto(servidor_sock, "Vx", 2, 0, (struct sockaddr*)&p2_addr, sizeof(p2_addr));
+                        string msg_turn_x = "Vx";
+                        msg_turn_x.append(MAXLINE - msg_turn_x.size(), '#');
+                        cout << "[SERVER SEND]: " << msg_turn_x.substr(0,40) << endl;
+                        sendto(servidor_sock, msg_turn_x.c_str(), msg_turn_x.size(), 0, (struct sockaddr*)&p2_addr, sizeof(p2_addr));
                     } else {
-                        cout << "[SERVER SEND]: Vo (to player 1)" << endl;
-                        sendto(servidor_sock, "Vo", 2, 0, (struct sockaddr*)&p1_addr, sizeof(p1_addr));
+                        string msg_turn_o = "Vo";
+                        msg_turn_o.append(MAXLINE - msg_turn_o.size(), '#');
+                        cout << "[SERVER SEND]: " << msg_turn_o.substr(0,40) << endl;
+                        sendto(servidor_sock, msg_turn_o.c_str(), msg_turn_o.size(), 0, (struct sockaddr*)&p1_addr, sizeof(p1_addr));
                     }
                 }
             }
