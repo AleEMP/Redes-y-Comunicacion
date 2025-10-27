@@ -36,7 +36,6 @@ struct FileFragmentBuffer {
     bool lastFragmentReceived = false;
 };
 
-
 void showMenu() {
     cout << "\n---------------------------------" << endl;
     cout << "1. Cambiar apodo" << endl;
@@ -65,12 +64,11 @@ void recibirMensajes(int socketCliente) {
             close(socketCliente);
             return;
         }
-        
+
         string cadena(buffer, n); 
         cout.flush();
 
-        cout << "\n[CLIENT RECV]: " << cadena.substr(0, 70) 
-             << (cadena.size() > 70 ? "..." : "") 
+        cout << "\n[CLIENT RECV]: " << cadena.substr(0, 40) 
              << " (size=" << n << ")" << endl;
 
         if (n > 0 && isdigit(cadena[0])) {
@@ -79,7 +77,7 @@ void recibirMensajes(int socketCliente) {
             
             char tipo_paquete = cadena[5]; 
 
-            if (tipo_paquete != 'f') { 
+            if (tipo_paquete != 'F') { 
                  cerr << "Error: Paquete con seq pero no es tipo 'f'" << endl;
                  continue;
             }
@@ -200,7 +198,7 @@ void recibirMensajes(int socketCliente) {
 
             } else if (tipo == 'v') {
             
-                string tablero_str = cadena.substr(1);
+                string tablero_str = cadena.substr(1, tamTablero * tamTablero); 
                 cout << "\n--- Tablero Actual ---" << endl;
                 for (int i = 0; i < tamTablero * tamTablero; i++) {
                     cout << " " << tablero_str[i] << " ";
@@ -237,13 +235,13 @@ void recibirMensajes(int socketCliente) {
 }
 
 int main(int argc, char* argv[]) {
-    if (argc < 3) {
-        cerr << "Uso: " << argv[0] << " <ip-servidor> <puerto>\n";
+    if (argc < 2) {
+        cerr << "Uso: " << argv[0] << "<puerto>\n";
         return 1;
     }
     
-    char* host_ip = argv[1];
-    int port = atoi(argv[2]);
+    char* host_ip = "127.0.0.1";
+    int port = atoi(argv[1]);
     struct hostent *host = (struct hostent *)gethostbyname(host_ip);
     
     char buffer[MAXLINE];
@@ -264,13 +262,17 @@ int main(int argc, char* argv[]) {
     t.detach();
 
     cout << "Introduce tu apodo: ";
-    string nickInicial;
-    cin >> nickInicial;
-    string tamañoNick = (nickInicial.size() < 10) ? "0" + to_string(nickInicial.size()) : to_string(nickInicial.size());
-    string enviarNick = string(1, 'n') + tamañoNick + nickInicial;
+    string Nicknamei;
+    cin >> Nicknamei;
+    string tamnick = (Nicknamei.size() < 10) ? "0" + to_string(Nicknamei.size()) : to_string(Nicknamei.size());
+    string enviarnick = string(1, 'n') + tamnick + Nicknamei;
     
-    cout << "[CLIENT SEND]: " << enviarNick << endl;
-    sendto(sock, enviarNick.c_str(), enviarNick.size(), 0, (const struct sockaddr *) &servaddr, sizeof(servaddr));
+    enviarnick.append(MAXLINE - enviarnick.size(), '#');
+    
+    cout << "[CLIENT SEND]: " << enviarnick.substr(0, 70) 
+         << "... (size=" << enviarnick.size() << ")" << endl;
+    
+    sendto(sock, enviarnick.c_str(), enviarnick.size(), 0, (const struct sockaddr *) &servaddr, sizeof(servaddr));
 
 
     int entrada;
@@ -344,10 +346,9 @@ int main(int argc, char* argv[]) {
             string tamFileName = (fileName.size() < 10) ? "0"+to_string(fileName.size()) : to_string(fileName.size());
             string tamFile = string(10 - to_string(fileSize).size(), '0') + to_string(fileSize);
 
-            // Este es el encabezado del *archivo* (común a todos los paquetes)
             string file_header = string(1, tipo) + tamDestin + destin + tamFileName + fileName + tamFile;
 
-            int data_chunk_size = MAXLINE - file_header.size() - 5; // -2 por el 'seq_m'
+            int data_chunk_size = MAXLINE - file_header.size() - 5; 
             int seq = 0;
             int bytes_sent = 0;
 
@@ -375,10 +376,10 @@ int main(int argc, char* argv[]) {
                 bytes_sent += current_chunk_data_size;
                 seq++;
 
-                usleep(1000);
+                usleep(1000); 
             }
             
-            continue;
+            continue; 
         }
         else if (entrada == 6) {
             tipo = 'p';
@@ -395,14 +396,23 @@ int main(int argc, char* argv[]) {
         } else if (entrada == 8) {
             tipo = 'x';
             enviar = string(1, tipo);
-            cout << "[CLIENT SEND]: " << enviar << endl; // LOGGING
+            
+            enviar.append(MAXLINE - enviar.size(), '#');
+
+            cout << "[CLIENT SEND]: " << enviar.substr(0, 70) 
+                 << "... (size=" << enviar.size() << ")" << endl;
+            
             sendto(sock, enviar.c_str(), enviar.size(), 0, (const struct sockaddr *) &servaddr, sizeof(servaddr));
             break; 
         } else {
             cout << "Opción no válida." << endl;
             continue;
         }
-        cout << "[CLIENT SEND]: " << enviar << endl;
+        
+        enviar.append(MAXLINE - enviar.size(), '#');
+        
+        cout << "[CLIENT SEND]: " << enviar.substr(0, 70) 
+             << "... (size=" << enviar.size() << ")" << endl;
         sendto(sock, enviar.c_str(), enviar.size(), 0, (const struct sockaddr *) &servaddr, sizeof(servaddr));
     }
 
